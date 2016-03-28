@@ -103,6 +103,7 @@ public class TrafficEngineApp {
 			boolean normalizeByTime = request.queryMap("normalizeByTime").booleanValue();
 			int confidenceInterval = request.queryMap("confidenceInterval").integerValue();
 
+
 			if(request.queryMap("w1").value() != null && !request.queryMap("w1").value().trim().isEmpty()) {
 				String valueStr[] = request.queryMap("w1").value().trim().split(",");
 				List<String> values = new ArrayList(Arrays.asList(valueStr));
@@ -114,6 +115,8 @@ public class TrafficEngineApp {
 				List<String> values = new ArrayList(Arrays.asList(valueStr));
 				values.forEach(v -> weeks2.add(Integer.parseInt(v.trim())));
 			}
+
+
 
 			Envelope env1 = new Envelope(x1, x2, y1, y2);
 
@@ -309,6 +312,29 @@ public class TrafficEngineApp {
 			response.raw().getOutputStream().write(imageData);			
 			return response;
 		});
+
+
+		get("/realTimeStats", (request, response) -> {
+
+			response.header("Access-Control-Allow-Origin", "*");
+			response.header("Access-Control-Request-Method", "*");
+			response.header("Access-Control-Allow-Headers", "*");
+
+			double x1 = request.queryMap("x1").doubleValue();
+			double x2 = request.queryMap("x2").doubleValue();
+			double y1 = request.queryMap("y1").doubleValue();
+			double y2 = request.queryMap("y2").doubleValue();
+
+			Envelope env1 = new Envelope(x1, x2, y1, y2);
+
+			Set<Long> segmentIds = TrafficEngineApp.engine.getTrafficEngine().getStreetSegmentIds(env1)
+					.stream().collect(Collectors.toSet());
+
+			SummaryStatistics summaryStats1 = TrafficEngineApp.engine.getTrafficEngine().osmData.statsDataStore.collectSummaryStatistics(segmentIds,true, null, null);
+
+			return new WeeklyStatsObject(summaryStats1);
+
+		}, mapper::writeValueAsString);
     }
 
 	

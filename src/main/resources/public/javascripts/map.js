@@ -17,7 +17,7 @@ var Traffic = Traffic || {};
 
 		A.app.instance.navbar.show(A.app.nav);
 
-		A.app.map = L.map('map').setView([10.3036741,123.8982952], 13);
+		A.app.map = L.map('map').setView([1.3387413,103.8165741], 12);
 
 		L.tileLayer('https://a.tiles.mapbox.com/v4/conveyal.gepida3i/{z}/{x}/{y}.png?access_token=pk.eyJ1IjoiY29udmV5YWwiLCJhIjoiMDliQURXOCJ9.9JWPsqJY7dGIdX777An7Pw', {
 		attribution: 'Map data &copy; <a href="http://openstreetmap.org">OpenStreetMap</a> contributors, <a href="http://creativecommons.org/licenses/by-sa/2.0/">CC-BY-SA</a>, Imagery �� <a href="http://mapbox.com">Mapbox</a>',
@@ -943,7 +943,8 @@ var Traffic = Traffic || {};
 			'click #data' : 'clickData',
 			'click #routing' : 'clickRouting',
 			'click #analysis' : 'clickAnalysis',
-			'click #location' : 'clickLocation'
+			'click #location' : 'clickLocation',
+			'click #traffic' : 'clickTraffic'
 
 
 		},
@@ -957,7 +958,7 @@ var Traffic = Traffic || {};
 				_this.render();
 			});
 
-			_.bindAll(this, 'onMapClick', 'clickAnalysis', 'clickLocation');
+			_.bindAll(this, 'onMapClick', 'clickAnalysis', 'clickLocation','clickTraffic');
 		},
 
 		clickLocation : function(evt) {
@@ -1163,6 +1164,207 @@ var Traffic = Traffic || {};
 			this.$el.unwrap();
 			this.setElement(this.$el);
 
+		},
+
+		clickTraffic: function(evt) {
+
+			A.app.sidebar = new A.app.TrafficSidebar();
+			A.app.instance.sidebar.show(A.app.sidebar);
+
+			this.endRouting();
+
+			this.$("li").removeClass("active");
+			this.$("#traffic").addClass("active");
+
+			if(A.app.map.hasLayer(A.app.dataOverlay))
+				A.app.map.removeLayer(A.app.dataOverlay);
+
+			A.app.sidebar.addTrafficOverlay()
+		}
+	});
+
+
+	A.app.TrafficSidebar = Marionette.Layout.extend({
+
+		template: Handlebars.getTemplate('app', 'sidebar-traffic'),
+
+		resetRoute : function() {
+			A.app.nav.resetRoute();
+		},
+
+		getRoute : function() {
+			A.app.nav.getRoute();
+		},
+
+		initialize : function() {
+
+			var _this = this;
+
+			_.bindAll(this, 'updateTrafficTiles', 'addTrafficOverlay', 'update');
+
+		},
+
+		onDestroy : function() {
+
+			A.app.map.off("moveend", A.app.sidebar.mapMove);
+		},
+
+		onShow : function() {
+
+			var _this = this;
+
+			A.app.map.on("moveend", A.app.sidebar.mapMove);
+
+			this.update();
+
+		},
+
+		mapMove : function() {
+			A.app.sidebar.filterChanged = false;
+			A.app.sidebar.update();
+		},
+
+		update : function() {
+
+			var _this = this;
+
+			var bounds = A.app.map.getBounds();
+			var x1 = bounds.getWest();
+			var x2 = bounds.getEast();
+			var y1 = bounds.getNorth();
+			var y2 = bounds.getSouth();
+
+			var confidenceInterval = this.$("#confidenceInterval").val();
+			var normalizeByTime = this.$("#normalizeByTime").val();
+
+			var url = '/realTimeStats?x1=' + x1 + '&x2=' + x2 + '&y1=' + y1 + '&y2=' + y2;
+
+			$.getJSON(url, function(chartData){
+				A.app.sidebar.loadChartData(chartData)
+			});
+		},
+
+		loadChartData : function(data) {
+
+			data.hours.forEach(function (d) {
+				d.hourOfDay = (d.h % 24) + 1;
+				d.dayOfWeek = ((d.h - d.hourOfDay) / 24) + 1;
+				d.s = d.s * 3.6; // convert from m/s km/h
+			});
+
+			if(!this.chartData) {
+				this.chartData = C(data.hours);
+
+				this.hourCount = this.chartData.dimension(function (d) {
+					return d.hourOfDay;       // add the magnitude dimension
+				});
+
+				this.hourCountGroup = this.hourCount.group().reduce(
+					/* callback for when data is added to the current filter results */
+					function (p, v) {
+						p.count += v.c;
+						p.sum += v.s;
+						if(p.count > 0)
+							p.avg = (p.sum / p.count);
+						else
+							p.avg = 0;
+						return p;
+					},
+					/* callback for when data is removed from the current filter results */
+					function (p, v) {
+						p.count -= v.c;
+						p.sum -= v.s;
+						if(p.count > 0)
+							p.avg = (p.sum / p.count);
+						else
+							p.avg = 0;
+
+						return p;
+					},
+					/* initialize p */
+					function () {
+						return {
+							count: 0,
+							sum: 0,
+							avg: 0
+						};
+					}
+				);
+
+				this.hourlyChart = dc.barChart("#hourlyChart");
+
+				this.hourlyChart.width(430)
+					.height(100)
+					.margins({top: 5, right: 10, bottom: 20, left: 40})
+					.dimension(this.hourCount)
+					.group(this.hourCountGroup)
+					.transitionDuration(0)
+					.centerBar(true)
+					.valueAccessor(function (p) {
+						return p.value.avg;
+					})
+					.gap(5)
+					.x(d3.scale.linear().domain([0.5, 24.5]))
+					.renderHorizontalGridLines(true)
+					.elasticY(true)
+					.xAxis().tickFormat();
+
+				this.hourlyChart.yAxis().ticks(6);
+
+				this.hourlyChart.yAxis().tickFormat(function (d) {
+					if(A.app.sidebar.percentChange)
+						return Math.round(d * 100) + "%"
+					else
+						return d;
+				});
+
+				this.hourlyChart.brush().on("brushend.custom", A.app.sidebar.updateTrafficTiles);
+
+			}
+			else {
+
+				this.hourlyChart.filterAll();
+				this.chartData.remove();
+
+
+				this.chartData.add(data.hours);
+
+				if(A.app.sidebar.hourExtent && ( A.app.sidebar.hourExtent[0] >= 1.0 ||  A.app.sidebar.hourExtent[1] >= 1.0)) {
+					this.hourlyChart.filter(dc.filters.RangedFilter(A.app.sidebar.hourExtent[0], A.app.sidebar.hourExtent[1]));
+				}
+
+				this.hourlyChart.brush().on("brushend.custom", A.app.sidebar.updateTrafficTiles);
+			}
+
+
+
+			dc.renderAll();
+
+			this.addTrafficOverlay();
+		},
+
+		addTrafficOverlay : function() {
+
+			if(A.app.segmentOverlay && A.app.map.hasLayer(A.app.segmentOverlay))
+				A.app.map.removeLayer(A.app.segmentOverlay);
+
+			var confidenceInterval = 1;
+			var normalizeByTime = true;
+
+			var url = '/tile/traffic?z={z}&x={x}&y={y}&confidenceInterval=' + confidenceInterval + '&normalizeByTime=' + normalizeByTime;
+
+			A.app.segmentOverlay = L.tileLayer(url).addTo(A.app.map);
+		},
+
+		updateTrafficTiles : function() {
+
+			A.app.sidebar.hourExtent = A.app.sidebar.hourlyChart.brush().extent();
+
+			A.app.sidebar.addTrafficOverlay();
+		},
+
+		onRender : function () {
+			this.$("#journeyInfo").hide();
 		}
 	});
 
