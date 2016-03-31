@@ -1188,14 +1188,6 @@ var Traffic = Traffic || {};
 
 		template: Handlebars.getTemplate('app', 'sidebar-traffic'),
 
-		resetRoute : function() {
-			A.app.nav.resetRoute();
-		},
-
-		getRoute : function() {
-			A.app.nav.getRoute();
-		},
-
 		initialize : function() {
 
 			var _this = this;

@@ -25,6 +25,8 @@ import java.io.IOException;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public abstract class TrafficTileRequest {
 
@@ -32,6 +34,7 @@ public abstract class TrafficTileRequest {
 
 	final public String type;
 	final public Integer x, y, z;
+	private static final Logger log = Logger.getLogger( TrafficTileRequest.class.getName());
 	
 	public TrafficTileRequest(Integer x, Integer y, Integer z, String type) {
 		this.x = x;
@@ -147,8 +150,10 @@ public abstract class TrafficTileRequest {
 				} catch (MismatchedDimensionException e) {
 					// TODO Auto-generated catch block
 					e.printStackTrace();
+					log.log(Level.WARNING, e.toString());
 				} catch (TransformException e) {
 					e.printStackTrace();
+					log.log(Level.WARNING, e.toString());
 				}
 			}
     		
@@ -157,6 +162,7 @@ public abstract class TrafficTileRequest {
 			} catch (IOException | ImageWriteException e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
+				log.log(Level.WARNING, e.toString());
 				return null;
 			}
 		}
